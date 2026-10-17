@@ -1,0 +1,10 @@
+{
+  "build": { "devPath": "http://localhost:5173", "distDir": "../dist", "withGlobalTauri": true },
+  "package": { "productName": "Wawity Ports", "version": "0.1.0" },
+  "tauri": {
+    "allowlist": { "clipboard": { "writeText": true }, "shell": { "open": "^https://(wawity\\.lol/?|github\\.com/Wawity/wawity-desktop(/releases)?/?)$" }, "window": { "close": true, "minimize": true, "maximize": true, "unmaximize": true, "startDragging": true } },
+    "bundle": { "active": false, "identifier": "com.wawity.ports", "icon": ["icons/wawity.ico"] },
+    "windows": [{ "label": "main", "title": "Wawity Ports", "width": 1000, "height": 700, "minWidth": 800, "minHeight": 600, "decorations": false, "center": true }],
+    "security": { "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost" }
+  }
+}

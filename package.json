@@ -1,0 +1,13 @@
+{
+  "name": "wawity-ports",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "build:portable": "npm run build && cargo build --release --manifest-path src-tauri/Cargo.toml"
+  },
+  "dependencies": { "lucide": "^0.468.0" },
+  "devDependencies": { "vite": "^8.3.4" }
+}

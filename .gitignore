@@ -1,0 +1,8 @@
+﻿node_modules/
+dist/
+src-tauri/target/
+wawity-ports-state.json
+wawity-ports-install-id
+wawity-ports.log*
+RESEARCH.md
+src-tauri/BACKEND_TESTS.md
