@@ -69,6 +69,29 @@ pub(crate) fn physical_lans() -> Result<Vec<Lan>, String> {
     Ok(lans)
 }
 
+pub const LAN_MISMATCH: &str =
+    "Saved router is not on the current physical LAN; no VPN fallback.";
+
+fn saved_gateway_ip(intent: &RouterIntent) -> Result<Ipv4Addr, String> {
+    let addr: SocketAddrV4 = intent
+        .gateway
+        .as_deref()
+        .ok_or("Missing saved gateway")?
+        .parse()
+        .map_err(|_| "Invalid saved gateway".to_string())?;
+    Ok(*addr.ip())
+}
+
+pub(crate) fn physical_lan_for_rebind(intent: &RouterIntent) -> Result<Lan, String> {
+    let gateway_ip = saved_gateway_ip(intent)?;
+    let lan = physical_lans()?
+        .into_iter()
+        .find(|lan| lan.gateway == gateway_ip)
+        .ok_or("Saved gateway is not any current physical LAN gateway; rebind refused.")?;
+    verify_route(&lan)?;
+    Ok(lan)
+}
+
 pub(crate) fn verify_route(lan: &Lan) -> Result<(), String> {
     validate_lan(lan)?;
     let output = powershell(&format!("$a=@(Get-NetAdapter -Physical | Where-Object {{ $_.ifIndex -eq {} -and $_.Status -eq 'Up' }}); if ($a.Count -ne 1) {{ throw 'Selected physical adapter is no longer up.' }}; $r=@(Find-NetRoute -RemoteIPAddress '{}' -LocalIPAddress '{}'); if ($r.Count -eq 0 -or @($r | Where-Object {{ $_.InterfaceIndex -ne {} }}).Count -gt 0) {{ throw 'Gateway route is not through the selected physical LAN; no VPN fallback.' }}; 'OK'", lan.index, lan.gateway, lan.local, lan.index))?;
@@ -379,13 +402,9 @@ pub(crate) fn physical_lan_for_intent(intent: &RouterIntent) -> Result<Lan, Stri
         .into_iter()
         .find(|lan| {
             intent.local_ip.as_deref() == Some(lan.local.to_string().as_str())
-                && intent
-                    .gateway
-                    .as_deref()
-                    .and_then(|s| s.parse::<SocketAddrV4>().ok())
-                    .is_some_and(|a| *a.ip() == lan.gateway)
+                && saved_gateway_ip(intent).is_ok_and(|ip| ip == lan.gateway)
         })
-        .ok_or("Saved router is not on the current physical LAN; no VPN fallback.")?;
+        .ok_or(LAN_MISMATCH)?;
     if intent
         .interface_index
         .is_some_and(|index| index != lan.index)
@@ -541,12 +560,17 @@ fn owned(entry: &Mapping, id: &str, port: u16, local: Ipv4Addr) -> bool {
     entry.description == id && entry.port == port && entry.ip == local
 }
 
+fn ours_but_stale_local(entry: &Mapping, id: &str, port: u16) -> bool {
+    entry.description == id && entry.port == port
+}
+
 pub fn open(
     gateway: &Router,
     id: &str,
     port: u16,
     proto: &str,
     journal: &mut Journal,
+    rebind: bool,
 ) -> Result<String, String> {
     verify_route(&gateway.lan)?;
     let local = gateway.lan.local;
@@ -564,6 +588,21 @@ pub fn open(
                 .into(),
         );
     }
+    let current = match current {
+        Some(entry) if rebind && !owned(&entry, id, port, local) && ours_but_stale_local(&entry, id, port) => {
+            soap(gateway, "DeletePortMapping", &mapping_arguments(port, proto))?;
+            if specific(gateway, port, proto)?.is_some() {
+                if let Some(intent) = journal.get_mut(id) {
+                    intent.state = "close-failed".into();
+                }
+                return Err(
+                    "Stale owned mapping (previous local address) deletion was not confirmed.".into(),
+                );
+            }
+            None
+        }
+        other => other,
+    };
     if let Some(entry) = current {
         if !owned(&entry, id, port, local) {
             if let Some(intent) = journal.get_mut(id) {
@@ -666,8 +705,14 @@ pub fn open(
     }
 }
 
-pub fn close(id: &str, port: u16, proto: &str, intent: &RouterIntent) -> Result<String, String> {
-       let Some(_) = &intent.gateway else {
+pub fn close(
+    id: &str,
+    port: u16,
+    proto: &str,
+    intent: &RouterIntent,
+    rebind: bool,
+) -> Result<String, String> {
+    let Some(_) = &intent.gateway else {
         return Ok("No router mapping was attempted; intent cleared.".into());
     };
     let gateway = from_intent(intent)?;
@@ -684,6 +729,20 @@ pub fn close(id: &str, port: u16, proto: &str, intent: &RouterIntent) -> Result<
                 return Err("Router deletion was not confirmed.".into());
             }
             Ok(format!("{port}/{proto}: owned router mapping removed."))
+        }
+        Some(entry) if rebind && ours_but_stale_local(&entry, id, port) => {
+            soap(
+                &gateway,
+                "DeletePortMapping",
+                &mapping_arguments(port, proto),
+            )?;
+            if specific(&gateway, port, proto)?.is_some() {
+                return Err("Router deletion was not confirmed.".into());
+            }
+            Ok(format!(
+                "{port}/{proto}: stale owned mapping for the previous local address {} removed.",
+                entry.ip
+            ))
         }
         Some(_) => {
             Err("Mapping is not owned by this app and local address; left unchanged.".into())
@@ -719,9 +778,9 @@ pub(crate) fn renew(
     match specific(&gateway, port, proto)? {
         Some(entry) if owned(&entry, id, port, gateway.lan.local) && entry.enabled => {
             verified_lease(&entry)?;
-            let result = open(&gateway, id, port, proto, journal);
+            let result = open(&gateway, id, port, proto, journal, false);
             if result.is_err() {
-                                              journal.insert(id.into(), intent);
+                journal.insert(id.into(), intent);
             }
             result
         }
@@ -874,6 +933,27 @@ mod tests {
             80,
             Ipv4Addr::LOCALHOST
         ));
+    }
+
+    #[test]
+    fn rebind_lan_refused_in_test_mode_and_stale_ownership_is_exact() {
+        let ip = Ipv4Addr::new(192, 168, 1, 10);
+        let entry = Mapping {
+            ip,
+            port: 80,
+            description: "WawityPorts-80-TCP".into(),
+            lease: 3600,
+            enabled: true,
+        };
+        assert!(ours_but_stale_local(&entry, "WawityPorts-80-TCP", 80));
+        assert!(!ours_but_stale_local(&entry, "Other-80-TCP", 80));
+        assert!(!ours_but_stale_local(&entry, "WawityPorts-80-TCP", 81));
+        let intent = RouterIntent {
+            gateway: Some("192.168.1.1:1900".into()),
+            ..RouterIntent::default()
+        };
+        let error = physical_lan_for_rebind(&intent).unwrap_err();
+        assert!(error.contains("test mode"), "{error}");
     }
 
     #[test]

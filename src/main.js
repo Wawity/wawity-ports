@@ -1,8 +1,8 @@
 import './style.css';
-import { createElement, EthernetPort, ArrowRight, RefreshCw, ShieldCheck, Router, X, Minus, Square, Trash2, ChevronLeft, ChevronRight, Info, Github, Globe, Download, Check, Copy, FileText, ScanLine } from 'lucide';
+import { createElement, EthernetPort, ArrowRight, RefreshCw, ShieldCheck, Router, X, Minus, Square, Trash2, ChevronLeft, ChevronRight, Info, Github, Globe, Download, Check, Copy, FileText, ScanLine, Repeat } from 'lucide';
 import { t, getLang, setLang, locale } from './i18n.js';
 
-const iconSet = { ports: EthernetPort, arrow: ArrowRight, refresh: RefreshCw, shield: ShieldCheck, router: Router, close: X, minus: Minus, square: Square, trash: Trash2, left: ChevronLeft, right: ChevronRight, info: Info, github: Github, globe: Globe, download: Download, check: Check, copy: Copy, file: FileText, scan: ScanLine };
+const iconSet = { ports: EthernetPort, arrow: ArrowRight, refresh: RefreshCw, shield: ShieldCheck, router: Router, close: X, minus: Minus, square: Square, trash: Trash2, left: ChevronLeft, right: ChevronRight, info: Info, github: Github, globe: Globe, download: Download, check: Check, copy: Copy, file: FileText, scan: ScanLine, rebind: Repeat };
 const icon = (name) => createElement(iconSet[name], { 'stroke-width': 1.7, 'aria-hidden': 'true' }).outerHTML;
 const native = window.__TAURI__;
 let busy = false;
@@ -30,7 +30,7 @@ document.querySelector('#app').innerHTML = `
       <button class="nav-item" id="nav-check" title="${t('nav.check')}">${icon('scan')}<span>${t('nav.check')}</span></button>
       <button class="nav-item" id="nav-network" title="${t('nav.network')}">${icon('globe')}<span>${t('nav.network')}</span></button>
       <button class="nav-item" id="nav-about" title="${t('nav.about')}">${icon('info')}<span>${t('nav.about')}</span></button>
-      <div class="rail-bottom"><button id="last-result" class="text-button" hidden>${icon('file')}${t('side.lastResult')}</button><div id="vpn-thanks" class="vpn-thanks" hidden><img class="vpn-w" src="/wawity.ico" alt=""><span>${t('side.vpnThanks')}<strong>${t('side.vpnThanksStrong')}</strong></span></div><div class="sidebar-note">${icon('shield')}<span>${t('side.note1')}<br>${t('side.note2')}</span></div><span class="version">Wawity Ports v0.1.0</span></div>
+      <div class="rail-bottom"><button id="last-result" class="text-button" hidden>${icon('file')}${t('side.lastResult')}</button><div id="vpn-thanks" class="vpn-thanks" hidden><img class="vpn-w" src="/wawity.ico" alt=""><span>${t('side.vpnThanks')}<strong>${t('side.vpnThanksStrong')}</strong></span></div><div class="sidebar-note">${icon('shield')}<span>${t('side.note1')}<br>${t('side.note2')}</span></div><span class="version">Wawity Ports v0.2.0</span></div>
     </aside>
     <main id="ports-view">
       <div class="page-heading"><div><h1>${t('nav.ports')}</h1><p>${t('ports.subtitle')}</p></div><span id="admin" class="badge">${t('badge.check')}</span></div>
@@ -46,6 +46,7 @@ document.querySelector('#app').innerHTML = `
           </div></fieldset>
           <label class="toggle-row"><span>${icon('router')}<span><strong>${t('ports.router')}</strong><small>${t('ports.routerSmall')}</small></span></span><input id="router" type="checkbox" checked /><span class="check-control" aria-hidden="true">${icon('check')}</span></label>
           <label class="toggle-row"><span>${icon('refresh')}<span><strong>${t('ports.renew')}</strong><small>${t('ports.renewSmall')}</small></span></span><input id="auto-renew" type="checkbox" checked /><span class="check-control" aria-hidden="true">${icon('check')}</span></label>
+          <label class="toggle-row"><span>${icon('rebind')}<span><strong>${t('ports.rebind')}</strong><small>${t('ports.rebindSmall')}</small></span></span><input id="rebind" type="checkbox" /><span class="check-control" aria-hidden="true">${icon('check')}</span></label>
           <label class="toggle-row public-row"><span>${icon('shield')}<span><strong>${t('ports.public')}</strong><small>${t('ports.publicSmall')}</small></span></span><input id="public" type="checkbox" /><span class="check-control" aria-hidden="true">${icon('check')}</span></label>
           <button class="primary" id="open" type="submit"><span>${t('ports.open')}</span>${icon('arrow')}</button>
         </form>
@@ -93,14 +94,14 @@ document.querySelector('#app').innerHTML = `
       <footer>${t('net.footer')}<span>${t('net.footerNote')}</span></footer>
     </main>
     <main id="about-view" hidden>
-      <div class="page-heading"><div><h1>${t('nav.about')}</h1><p>${t('about.subtitle')}</p></div><span class="badge">Ports v0.1.0</span></div>
+      <div class="page-heading"><div><h1>${t('nav.about')}</h1><p>${t('about.subtitle')}</p></div><span class="badge">Ports v0.2.0</span></div>
       <section class="about-brand"><img src="/wawity.ico" alt="" /><div><h2>wawity<span>.</span></h2><p>${t('about.tagline')}</p></div></section>
       <p class="about-copy">${t('about.copy')}</p>
       <section class="beta-notice"><p class="beta-label">beta · telemetry</p><p class="beta-title">${t('beta.title')}</p><p class="beta-text">${t('beta.text')}</p></section>
       <fieldset class="lang-picker" aria-label="${t('about.language')}"><legend>${t('about.language')}</legend><label class="toggle-row"><span>${icon('globe')}<span><strong>English</strong></span></span><input type="radio" name="app-lang" value="en" ${getLang() === 'en' ? 'checked' : ''} /><span class="check-control" aria-hidden="true">${icon('check')}</span></label><label class="toggle-row"><span>${icon('globe')}<span><strong>Russian</strong></span></span><input type="radio" name="app-lang" value="ru" ${getLang() === 'ru' ? 'checked' : ''} /><span class="check-control" aria-hidden="true">${icon('check')}</span></label></fieldset>
       <section class="vpn-promo"><div class="promo-heading">${icon('shield')}<h2>${t('about.promoTitle')}</h2></div><p>${t('about.promo')}</p><button class="primary external-link" data-url="https://github.com/Wawity/wawity-desktop/releases"><span>${t('about.promoButton')}</span>${icon('download')}</button><small>${t('about.promoSmall')}</small></section>
       <div class="about-links"><button class="external-link" data-url="https://wawity.lol">${icon('globe')}<span>wawity.lol</span>${icon('arrow')}</button><button class="external-link" data-url="https://github.com/Wawity/wawity-desktop">${icon('github')}<span>${t('about.github')}</span>${icon('arrow')}</button></div>
-      <footer>Wawity Ports v0.1.0<span>Windows / Portable</span></footer>
+      <footer>Wawity Ports v0.2.0<span>Windows / Portable</span></footer>
     </main>
   </div>
   <section id="activity" class="activity" hidden aria-live="polite"><div class="activity-heading"><div class="result-title">${icon('file')}<h2>${t('act.title')}</h2></div><button id="dismiss" aria-label="${t('aria.dismiss')}">${icon('close')}</button></div><div id="messages"></div><div class="result-actions"><button id="copy-result">${icon('copy')}<span>${t('act.copy')}</span></button><button id="open-log">${icon('file')}<span>${t('act.openLog')}</span></button><span id="result-feedback" role="status"></span></div></section>`;
@@ -166,8 +167,9 @@ document.querySelectorAll('input[name="app-lang"]').forEach(input => input.addEv
 $('#allow-nat-pmp').addEventListener('change', () => {
   if ($('#allow-nat-pmp').checked && !window.confirm(t('confirm.natPmp'))) $('#allow-nat-pmp').checked = false;
 });
-$('#router').addEventListener('change', () => { if (!$('#router').checked) $('#auto-renew').checked = false; });
+$('#router').addEventListener('change', () => { if (!$('#router').checked) { $('#auto-renew').checked = false; $('#rebind').checked = false; } });
 $('#auto-renew').addEventListener('change', () => { if ($('#auto-renew').checked) $('#router').checked = true; });
+$('#rebind').addEventListener('change', () => { if ($('#rebind').checked) $('#router').checked = true; });
 $('#network-scan').addEventListener('click', () => run(async () => {
   $('#network-status').textContent = t('net.scanning');
   try {
@@ -287,9 +289,15 @@ function renderRules() {
     button.setAttribute('aria-label', t('rules.removeAria', { port: rule.port, protocol: rule.protocol }));
     button.disabled = busy || !native;
     button.addEventListener('click', () => run(async () => {
-      const result = await native.tauri.invoke('close_rule', { id: rule.id });
+      let result = await native.tauri.invoke('close_rule', { id: rule.id, rebind: false });
+      let all = [...result.messages];
+      if (all.some(m => String(m).includes('not on the current physical LAN')) && window.confirm(t('confirm.closeRebind'))) {
+        const retry = await native.tauri.invoke('close_rule', { id: rule.id, rebind: true });
+        all = [...all, ...retry.messages];
+        result = retry;
+      }
       rules = result.rules;
-      showMessages(result.messages);
+      showMessages(all);
     }));
     action.append(button);
     row.append(port, firewall, router, action);
@@ -365,8 +373,9 @@ async function refresh() {
 $('#port-form').addEventListener('submit', (event) => {
   event.preventDefault();
   if (!native) return;
-  const request = { ports: $('#ports').value.trim(), protocol: new FormData(event.currentTarget).get('protocol'), router: $('#router').checked, public: $('#public').checked, autoRenew: $('#router').checked && $('#auto-renew').checked, allowNatPmp: $('#allow-nat-pmp').checked };
+  const request = { ports: $('#ports').value.trim(), protocol: new FormData(event.currentTarget).get('protocol'), router: $('#router').checked, public: $('#public').checked, autoRenew: $('#router').checked && $('#auto-renew').checked, allowNatPmp: $('#allow-nat-pmp').checked, rebind: $('#router').checked && $('#rebind').checked };
   if (request.public && !window.confirm(t('confirm.public'))) return;
+  if (request.rebind && !window.confirm(t('confirm.rebind'))) return;
   run(async () => {
     await checkVpn();
     const result = await native.tauri.invoke('open_ports', { request });

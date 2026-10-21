@@ -92,7 +92,7 @@ fn save_failure_never_sends_map_and_timeout_never_allows_fallback() {
     assert!(!j[ID].confirmed);
     assert!(j[ID].nonce.is_some());
     assert_eq!(t.requests.len(), 1);
-    let error = open(ID, 80, "TCP", &mut j, true).unwrap_err();
+    let error = open(ID, 80, "TCP", &mut j, true, false).unwrap_err();
     assert!(error.contains("ambiguous")); 
 }
 

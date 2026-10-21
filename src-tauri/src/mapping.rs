@@ -12,12 +12,31 @@ pub fn saved_method(intent: &RouterIntent) -> Option<&str> {
         .or_else(|| intent.gateway.as_ref().map(|_| "UPnP"))
 }
 
+pub fn rebind_intent(id: &str, journal: &mut Journal) -> Result<(router::Lan, Option<String>), String> {
+    let intent = journal
+        .get(id)
+        .ok_or("No saved router intent to rebind")?
+        .clone();
+    if !matches!(saved_method(&intent), Some("UPnP")) || intent.gateway.is_none() {
+        return Err("LAN rebind consent applies to app-owned UPnP intents only.".into());
+    }
+    let lan = router::physical_lan_for_rebind(&intent)?;
+    let previous_local = intent.local_ip.clone();
+    let entry = journal.get_mut(id).unwrap();
+    entry.local_ip = Some(lan.local.to_string());
+    entry.interface_index = Some(lan.index);
+    entry.state = "unverified".into();
+    save(journal)?;
+    Ok((lan, previous_local))
+}
+
 pub fn open(
     id: &str,
     port: u16,
     proto: &str,
     journal: &mut Journal,
     allow_nat: bool,
+    rebind: bool,
 ) -> Result<String, String> {
     let previous = journal.get(id).cloned().unwrap_or_default();
     if previous.state == "conflict" && previous.gateway.is_none() {
@@ -25,7 +44,27 @@ pub fn open(
     }
        if previous.gateway.is_some() && saved_method(&previous).is_some() {
         return match saved_method(&previous).unwrap() {
-            "UPnP" => router::open(&router::from_intent(&previous)?, id, port, proto, journal),
+            "UPnP" => match router::from_intent(&previous) {
+                Ok(gateway) => router::open(&gateway, id, port, proto, journal, rebind),
+                Err(error) if rebind && error.contains(router::LAN_MISMATCH) => {
+                    let (lan, previous_local) = rebind_intent(id, journal)?;
+                    let rebound = journal
+                        .get(id)
+                        .cloned()
+                        .ok_or("Rebind lost the saved intent")?;
+                    let gateway = router::from_intent(&rebound)?;
+                    let note = router::open(&gateway, id, port, proto, journal, true)?;
+                    Ok(format!(
+                        "LAN rebind: local address updated{} to {} (gateway {} route re-verified). {note}",
+                        previous_local
+                            .map(|old| format!(" from {old}"))
+                            .unwrap_or_default(),
+                        lan.local,
+                        lan.gateway
+                    ))
+                }
+                Err(error) => Err(error),
+            },
             "PCP" | "NAT-PMP" => {
                 if saved_method(&previous) == Some("NAT-PMP") && !allow_nat {
                     return Err(udp::NAT_RISK.into());
@@ -44,7 +83,7 @@ pub fn open(
         .ok_or("No physical LAN")?;
     let mut errors = Vec::new();
     match router::discover_on(lan.clone()) {
-        Ok(gateway) => match router::open(&gateway, id, port, proto, journal) {
+        Ok(gateway) => match router::open(&gateway, id, port, proto, journal, false) {
             Ok(note) => return Ok(note),
             Err(e) => {
                 if journal
@@ -369,7 +408,13 @@ fn preflight_epoch(
     Ok(())
 }
 
-pub fn close(id: &str, port: u16, proto: &str, intent: &RouterIntent) -> Result<String, String> {
+pub fn close(
+    id: &str,
+    port: u16,
+    proto: &str,
+    intent: &RouterIntent,
+    rebind: bool,
+) -> Result<String, String> {
     match saved_method(intent) {
         Some("PCP") | Some("NAT-PMP") => {
             let lan = router::physical_lan_for_intent(intent)?;
@@ -384,7 +429,7 @@ pub fn close(id: &str, port: u16, proto: &str, intent: &RouterIntent) -> Result<
             }
             udp_close(port, proto, intent, &lan, &mut transport)
         }
-        Some("UPnP") | None => router::close(id, port, proto, intent),
+        Some("UPnP") | None => router::close(id, port, proto, intent, rebind),
         _ => Err("Unknown mapping method; left unchanged.".into()),
     }
 }

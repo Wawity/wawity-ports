@@ -38,6 +38,8 @@ struct OpenRequest {
     auto_renew: bool,
     #[serde(default)]
     allow_nat_pmp: bool,
+    #[serde(default)]
+    rebind: bool,
 }
 
 #[derive(Serialize)]
@@ -376,13 +378,14 @@ fn open_sync(request: OpenRequest) -> Result<Outcome, String> {
                 }
             }
             if request.router {
+                let rebind = request.rebind;
                 let result = apply_router_request(
                     &id,
                     request.auto_renew,
                     request.allow_nat_pmp,
                     &mut journal,
                     save,
-                    |journal, allow_nat| mapping::open(&id, port, protocol, journal, allow_nat),
+                    |journal, allow_nat| mapping::open(&id, port, protocol, journal, allow_nat, rebind),
                 );
                 match result {
                     Ok(note) => messages.push(format!("{port}/{protocol}: {note}")),
@@ -469,7 +472,7 @@ fn apply_router_request(
     Ok(note)
 }
 
-fn close_sync(id: String) -> Result<Outcome, String> {
+fn close_sync(id: String, rebind: bool) -> Result<Outcome, String> {
     let (port, protocol) = ports::parse_id(&id)?;
     let _guard = OPERATIONS
         .lock()
@@ -494,8 +497,34 @@ fn close_sync(id: String) -> Result<Outcome, String> {
         )),
         Err(e) => messages.push(format!("{port}/{protocol}: firewall removal failed: {e}")),
     }
-    if let Some(intent) = journal.get(&id).cloned() {
-        match mapping::close(&id, port, protocol, &intent) {
+    if let Some(mut intent) = journal.get(&id).cloned() {
+        let mut result = mapping::close(&id, port, protocol, &intent, false);
+        if rebind {
+            if let Err(e) = &result {
+                if e.contains(router::LAN_MISMATCH) {
+                    match mapping::rebind_intent(&id, &mut journal) {
+                        Ok((lan, previous_local)) => {
+                            messages.push(format!(
+                                "{port}/{protocol}: LAN rebind: local address updated{} to {} (gateway {} route re-verified).",
+                                previous_local
+                                    .map(|old| format!(" from {old}"))
+                                    .unwrap_or_default(),
+                                lan.local,
+                                lan.gateway
+                            ));
+                            if let Some(rebound) = journal.get(&id).cloned() {
+                                intent = rebound;
+                                result = mapping::close(&id, port, protocol, &intent, true);
+                            }
+                        }
+                        Err(e) => {
+                            messages.push(format!("{port}/{protocol}: LAN rebind refused: {e}"))
+                        }
+                    }
+                }
+            }
+        }
+        match result {
             Ok(note) => {
                 journal.remove(&id);
                 messages.push(note);
@@ -554,8 +583,8 @@ async fn open_ports(request: OpenRequest) -> Result<Outcome, String> {
     logging::outcome("open_ports", result)
 }
 #[tauri::command]
-async fn close_rule(id: String) -> Result<Outcome, String> {
-    let result = tauri::async_runtime::spawn_blocking(move || close_sync(id))
+async fn close_rule(id: String, rebind: Option<bool>) -> Result<Outcome, String> {
+    let result = tauri::async_runtime::spawn_blocking(move || close_sync(id, rebind.unwrap_or(false)))
         .await
         .map_err(|e| e.to_string())
         .and_then(|r| r);
@@ -780,7 +809,7 @@ mod tests {
                 false,
                 &mut journal,
                 persist,
-                |journal, allow_nat| mapping::open(id, 80, "TCP", journal, allow_nat),
+                |journal, allow_nat| mapping::open(id, 80, "TCP", journal, allow_nat, false),
             )
             .unwrap_err();
             assert!(error.contains("checkbox consent"));
@@ -855,10 +884,12 @@ mod tests {
                 .unwrap();
         assert!(!request.auto_renew);
         assert!(!request.allow_nat_pmp);
-        let request:OpenRequest=serde_json::from_str(r#"{"ports":"80","protocol":"TCP","router":true,"public":false,"autoRenew":true,"allowNatPmp":true}"#).unwrap();
+        assert!(!request.rebind);
+        let request:OpenRequest=serde_json::from_str(r#"{"ports":"80","protocol":"TCP","router":true,"public":false,"autoRenew":true,"allowNatPmp":true,"rebind":true}"#).unwrap();
         assert!(request.auto_renew);
         assert!(request.allow_nat_pmp);
-        for field in ["autoRenew", "allowNatPmp"] {
+        assert!(request.rebind);
+        for field in ["autoRenew", "allowNatPmp", "rebind"] {
             let mut value =
                 serde_json::json!({"ports":"80","protocol":"TCP","router":true,"public":false});
             value[field] = serde_json::Value::Null;
